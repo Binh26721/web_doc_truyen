@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cập nhật hồ sơ</title>
-    <link rel="stylesheet" href="/web_doc_truyen/frontend/public/css/profile.css">
+    <link rel="stylesheet" href="/web_doc_truyen/frontend/public/css/profile.css?v=20260405-2">
     <link rel="stylesheet" href="/web_doc_truyen/frontend/public/css/home.css?v=20260403-2">
     <link rel="stylesheet" href="/web_doc_truyen/frontend/public/css/theloai_user.css">
     <link rel="stylesheet" href="/web_doc_truyen/frontend/public/fonts/fontawesome-free-7.2.0-web/css/all.min.css">
@@ -18,11 +18,6 @@
         </div>
 
         <div id="api-message"></div>
-
-        <div class="incomplete-notice" id="incomplete-notice" style="display:none;">
-            <h3 id="incomplete-title">Thông tin chưa hoàn thiện</h3>
-            <ul class="incomplete-list" id="incomplete-list"></ul>
-        </div>
 
         <form id="profile-form" enctype="multipart/form-data">
             <div class="form-group" data-field="avatar">
@@ -57,6 +52,7 @@
                 <label>Số điện thoại</label>
                 <input type="tel" id="so_dien_thoai" name="so_dien_thoai" class="form-control" placeholder="Nhập số điện thoại" pattern="[0-9]{10,11}">
                 <small class="form-text">Nhập 10-11 chữ số</small>
+                <small class="field-error" id="phone-error"></small>
             </div>
 
             <div class="form-group" data-field="gioi_tinh">
@@ -87,19 +83,33 @@
     </div>
 
     <script>
-        var FIELD_META = {
-            avatar: 'Ảnh đại diện',
-            ho_ten: 'Họ và tên',
-            so_dien_thoai: 'Số điện thoại',
-            gioi_tinh: 'Giới tính',
-            ngay_sinh: 'Ngày sinh',
-            dia_chi: 'Địa chỉ'
-        };
-
         function showMessage(type, text) {
             var box = document.getElementById('api-message');
+            if (!text) {
+                box.className = '';
+                box.textContent = '';
+                return;
+            }
             box.className = type === 'error' ? 'error-message' : 'success-message';
             box.textContent = text;
+        }
+
+        function clearPhoneFieldError() {
+            var phoneError = document.getElementById('phone-error');
+            phoneError.textContent = '';
+            phoneError.classList.remove('show');
+        }
+
+        function showPhoneFieldError(message) {
+            var phoneError = document.getElementById('phone-error');
+            phoneError.textContent = message || 'Số điện thoại đã tồn tại';
+            phoneError.classList.add('show');
+        }
+
+        function isPhoneDuplicateError(result, fallbackMessage) {
+            var status = result && result.ok === false ? result.status : null;
+            var message = String((result && result.payload && result.payload.message) || fallbackMessage || '').toLowerCase();
+            return status === 409 || (message.indexOf('số điện thoại') !== -1 && message.indexOf('tồn tại') !== -1);
         }
 
         function loadHeader() {
@@ -153,43 +163,6 @@
             return 'https://ui-avatars.com/api/?name=' + encodeURIComponent(userName || 'User') + '&background=e0e0e0&color=666&size=150';
         }
 
-        function markIncomplete(profile) {
-            var missing = [];
-            var avatarInput = document.getElementById('avatarInput');
-            var hasSelectedAvatar = avatarInput && avatarInput.files && avatarInput.files.length > 0;
-
-            Object.keys(FIELD_META).forEach(function (field) {
-                var group = document.querySelector('.form-group[data-field="' + field + '"]');
-                if (!group) {
-                    return;
-                }
-
-                group.classList.remove('incomplete');
-
-                var value = profile[field] || '';
-                var isEmpty = String(value).trim() === '';
-
-                if (field === 'avatar' && hasSelectedAvatar) {
-                    isEmpty = false;
-                }
-
-                if (isEmpty) {
-                    group.classList.add('incomplete');
-                    missing.push(FIELD_META[field]);
-                }
-            });
-
-            var notice = document.getElementById('incomplete-notice');
-            var list = document.getElementById('incomplete-list');
-            var title = document.getElementById('incomplete-title');
-
-            if (missing.length === 0) {
-                notice.style.display = 'none';
-                list.innerHTML = '';
-                return;
-            }
-        }
-
         function fillProfile(data) {
             var user = data || {};
             var profile = user.profile || {};
@@ -207,8 +180,6 @@
             avatarEl.onerror = function () {
                 avatarEl.src = buildAvatarUrl('', user.ten_dang_nhap || '');
             };
-
-            markIncomplete(profile);
         }
 
         function loadProfileForEdit() {
@@ -251,16 +222,13 @@
                     preview.src = event.target.result;
                 };
                 reader.readAsDataURL(file);
+            });
+        }
 
-                var profile = {
-                    ho_ten: document.getElementById('ho_ten').value,
-                    so_dien_thoai: document.getElementById('so_dien_thoai').value,
-                    gioi_tinh: document.getElementById('gioi_tinh').value,
-                    ngay_sinh: document.getElementById('ngay_sinh').value,
-                    dia_chi: document.getElementById('dia_chi').value,
-                    avatar: '__selected__'
-                };
-                markIncomplete(profile);
+        function bindPhoneInput() {
+            var phoneInput = document.getElementById('so_dien_thoai');
+            phoneInput.addEventListener('input', function () {
+                clearPhoneFieldError();
             });
         }
 
@@ -269,6 +237,8 @@
 
             form.addEventListener('submit', function (event) {
                 event.preventDefault();
+                clearPhoneFieldError();
+                showMessage('', '');
 
                 var formData = new FormData(form);
                 var button = form.querySelector('.btn-submit');
@@ -284,6 +254,7 @@
                         return response.json().then(function (payload) {
                             return {
                                 ok: response.ok,
+                                status: response.status,
                                 payload: payload
                             };
                         });
@@ -292,6 +263,12 @@
                         if (!result.ok || !result.payload.success) {
                             var message = result.payload.message || '';
                             var errors = Array.isArray(result.payload.errors) ? result.payload.errors.join(', ') : '';
+
+                            if (isPhoneDuplicateError(result, message || errors)) {
+                                showPhoneFieldError(message || errors || 'Số điện thoại đã tồn tại');
+                                return;
+                            }
+
                             throw new Error(message || errors || 'Cập nhật thất bại');
                         }
 
@@ -311,6 +288,7 @@
         loadHeader();
         loadProfileForEdit();
         bindAvatarPreview();
+        bindPhoneInput();
         bindSubmitProfile();
     </script>
 </body>
