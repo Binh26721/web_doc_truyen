@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cập nhật hồ sơ</title>
+    <link rel="stylesheet" href="/web_doc_truyen/frontend/public/css/profile.css">
+    <link rel="stylesheet" href="/web_doc_truyen/frontend/public/css/home.css?v=20260403-2">
+    <link rel="stylesheet" href="/web_doc_truyen/frontend/public/css/theloai_user.css">
+    <link rel="stylesheet" href="/web_doc_truyen/frontend/public/fonts/fontawesome-free-7.2.0-web/css/all.min.css">
+</head>
+<body>
+    <div id="header-placeholder"></div>
+
+    <div class="form-container">
+        <div class="form-header">
+            <h2>Cập nhật thông tin cá nhân</h2>
+        </div>
+
+        <div id="api-message"></div>
+
+        <div class="incomplete-notice" id="incomplete-notice" style="display:none;">
+            <h3 id="incomplete-title">Thông tin chưa hoàn thiện</h3>
+            <ul class="incomplete-list" id="incomplete-list"></ul>
+        </div>
+
+        <form id="profile-form" enctype="multipart/form-data">
+            <div class="form-group" data-field="avatar">
+                <label>Ảnh đại diện</label>
+                <div class="avatar-upload">
+                    <div class="avatar-preview">
+                        <img id="avatar-preview-image" src="" alt="Avatar">
+                    </div>
+                    <input type="file" name="avatar" id="avatarInput" accept="image/*">
+                    <label for="avatarInput" class="upload-btn">Chọn ảnh</label>
+                </div>
+            </div>
+
+            <div class="form-group" data-field="ho_ten">
+                <label>Họ và tên</label>
+                <input type="text" id="ho_ten" name="ho_ten" class="form-control" placeholder="Nhập họ và tên đầy đủ">
+            </div>
+
+            <div class="form-group">
+                <label>Tên đăng nhập</label>
+                <input type="text" id="ten_dang_nhap" class="form-control" disabled>
+                <small class="form-text">Không thể thay đổi tên đăng nhập</small>
+            </div>
+
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="email" class="form-control" disabled>
+                <small class="form-text">Email được quản lý bởi tài khoản đăng nhập</small>
+            </div>
+
+            <div class="form-group" data-field="so_dien_thoai">
+                <label>Số điện thoại</label>
+                <input type="tel" id="so_dien_thoai" name="so_dien_thoai" class="form-control" placeholder="Nhập số điện thoại" pattern="[0-9]{10,11}">
+                <small class="form-text">Nhập 10-11 chữ số</small>
+            </div>
+
+            <div class="form-group" data-field="gioi_tinh">
+                <label>Giới tính</label>
+                <select id="gioi_tinh" name="gioi_tinh" class="form-control">
+                    <option value="">-- Chọn giới tính --</option>
+                    <option value="nam">Nam</option>
+                    <option value="nu">Nữ</option>
+                    <option value="khac">Khác</option>
+                </select>
+            </div>
+
+            <div class="form-group" data-field="ngay_sinh">
+                <label>Ngày sinh</label>
+                <input type="date" id="ngay_sinh" name="ngay_sinh" class="form-control">
+            </div>
+
+            <div class="form-group" data-field="dia_chi">
+                <label>Địa chỉ sinh sống</label>
+                <textarea id="dia_chi" name="dia_chi" class="form-control" rows="3" placeholder="Nhập địa chỉ của bạn"></textarea>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn-submit">Lưu</button>
+                <a href="/web_doc_truyen/frontend/view/hoso_user/hoso_view.html" class="btn-cancel">Hủy</a>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        var FIELD_META = {
+            avatar: 'Ảnh đại diện',
+            ho_ten: 'Họ và tên',
+            so_dien_thoai: 'Số điện thoại',
+            gioi_tinh: 'Giới tính',
+            ngay_sinh: 'Ngày sinh',
+            dia_chi: 'Địa chỉ'
+        };
+
+        function showMessage(type, text) {
+            var box = document.getElementById('api-message');
+            box.className = type === 'error' ? 'error-message' : 'success-message';
+            box.textContent = text;
+        }
+
+        function loadHeader() {
+            fetch('/web_doc_truyen/frontend/view/layouts/user/header.html')
+                .then(function (response) {
+                    if (!response.ok) {
+                        throw new Error('Header load failed');
+                    }
+                    return response.text();
+                })
+                .then(function (html) {
+                    var parser = new DOMParser();
+                    var doc = parser.parseFromString(html, 'text/html');
+                    var header = doc.querySelector('header');
+                    var scripts = doc.querySelectorAll('script');
+
+                    if (!header) {
+                        throw new Error('Missing header element');
+                    }
+
+                    document.getElementById('header-placeholder').innerHTML = header.outerHTML;
+
+                    scripts.forEach(function (script) {
+                        var runtimeScript = document.createElement('script');
+                        if (script.src) {
+                            runtimeScript.src = script.src;
+                        } else {
+                            runtimeScript.textContent = script.textContent;
+                        }
+                        document.body.appendChild(runtimeScript);
+                    });
+                })
+                .catch(function (error) {
+                    console.error('Lỗi tải header:', error);
+                });
+        }
+
+        function buildAvatarUrl(fileName, userName) {
+            if (fileName) {
+                var normalized = String(fileName).trim().replace(/\\/g, '/');
+                if (normalized.indexOf('http://') === 0 || normalized.indexOf('https://') === 0 || normalized.indexOf('/') === 0) {
+                    return normalized;
+                }
+
+                var parts = normalized.split('/').filter(Boolean);
+                var fileOnly = parts.length ? parts[parts.length - 1] : '';
+                if (fileOnly) {
+                    return '/web_doc_truyen/backend/uploads/avatar/' + fileOnly;
+                }
+            }
+            return 'https://ui-avatars.com/api/?name=' + encodeURIComponent(userName || 'User') + '&background=e0e0e0&color=666&size=150';
+        }
+
+        function markIncomplete(profile) {
+            var missing = [];
+            var avatarInput = document.getElementById('avatarInput');
+            var hasSelectedAvatar = avatarInput && avatarInput.files && avatarInput.files.length > 0;
+
+            Object.keys(FIELD_META).forEach(function (field) {
+                var group = document.querySelector('.form-group[data-field="' + field + '"]');
+                if (!group) {
+                    return;
+                }
+
+                group.classList.remove('incomplete');
+
+                var value = profile[field] || '';
+                var isEmpty = String(value).trim() === '';
+
+                if (field === 'avatar' && hasSelectedAvatar) {
+                    isEmpty = false;
+                }
+
+                if (isEmpty) {
+                    group.classList.add('incomplete');
+                    missing.push(FIELD_META[field]);
+                }
+            });
+
+            var notice = document.getElementById('incomplete-notice');
+            var list = document.getElementById('incomplete-list');
+            var title = document.getElementById('incomplete-title');
+
+            if (missing.length === 0) {
+                notice.style.display = 'none';
+                list.innerHTML = '';
+                return;
+            }
+        }
+
+        function fillProfile(data) {
+            var user = data || {};
+            var profile = user.profile || {};
+
+            document.getElementById('ten_dang_nhap').value = user.ten_dang_nhap || '';
+            document.getElementById('email').value = user.email || '';
+            document.getElementById('ho_ten').value = profile.ho_ten || '';
+            document.getElementById('so_dien_thoai').value = profile.so_dien_thoai || '';
+            document.getElementById('gioi_tinh').value = profile.gioi_tinh || '';
+            document.getElementById('ngay_sinh').value = profile.ngay_sinh || '';
+            document.getElementById('dia_chi').value = profile.dia_chi || '';
+
+            var avatarEl = document.getElementById('avatar-preview-image');
+            avatarEl.src = buildAvatarUrl(profile.avatar || '', user.ten_dang_nhap || '');
+            avatarEl.onerror = function () {
+                avatarEl.src = buildAvatarUrl('', user.ten_dang_nhap || '');
+            };
+
+            markIncomplete(profile);
+        }
+
+        function loadProfileForEdit() {
+            fetch('/web_doc_truyen/backend/api/profile/profile_api.php', {
+                method: 'GET',
+                credentials: 'include'
+            })
+                .then(function (response) {
+                    return response.json().then(function (payload) {
+                        return {
+                            ok: response.ok,
+                            payload: payload
+                        };
+                    });
+                })
+                .then(function (result) {
+                    if (!result.ok || !result.payload.success) {
+                        throw new Error(result.payload.message || 'Không tải được hồ sơ');
+                    }
+
+                    fillProfile(result.payload.data || {});
+                })
+                .catch(function (error) {
+                    showMessage('error', error.message || 'Không tải được hồ sơ');
+                });
+        }
+
+        function bindAvatarPreview() {
+            var input = document.getElementById('avatarInput');
+            var preview = document.getElementById('avatar-preview-image');
+
+            input.addEventListener('change', function () {
+                if (!input.files || !input.files[0]) {
+                    return;
+                }
+
+                var file = input.files[0];
+                var reader = new FileReader();
+                reader.onload = function (event) {
+                    preview.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+
+                var profile = {
+                    ho_ten: document.getElementById('ho_ten').value,
+                    so_dien_thoai: document.getElementById('so_dien_thoai').value,
+                    gioi_tinh: document.getElementById('gioi_tinh').value,
+                    ngay_sinh: document.getElementById('ngay_sinh').value,
+                    dia_chi: document.getElementById('dia_chi').value,
+                    avatar: '__selected__'
+                };
+                markIncomplete(profile);
+            });
+        }
+
+        function bindSubmitProfile() {
+            var form = document.getElementById('profile-form');
+
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+
+                var formData = new FormData(form);
+                var button = form.querySelector('.btn-submit');
+                button.disabled = true;
+                button.textContent = 'Đang lưu...';
+
+                fetch('/web_doc_truyen/backend/api/profile/update_api.php', {
+                    method: 'POST',
+                    credentials: 'include',
+                    body: formData
+                })
+                    .then(function (response) {
+                        return response.json().then(function (payload) {
+                            return {
+                                ok: response.ok,
+                                payload: payload
+                            };
+                        });
+                    })
+                    .then(function (result) {
+                        if (!result.ok || !result.payload.success) {
+                            var message = result.payload.message || '';
+                            var errors = Array.isArray(result.payload.errors) ? result.payload.errors.join(', ') : '';
+                            throw new Error(message || errors || 'Cập nhật thất bại');
+                        }
+
+                        window.location.href = '/web_doc_truyen/frontend/view/hoso_user/hoso_view.html';
+                    })
+                    .catch(function (error) {
+                        showMessage('error', error.message || 'Không thể cập nhật hồ sơ');
+                    })
+                    .finally(function () {
+                        button.disabled = false;
+                        button.textContent = 'Lưu';
+                    });
+            });
+        }
+
+        document.getElementById('ngay_sinh').setAttribute('max', new Date().toISOString().split('T')[0]);
+        loadHeader();
+        loadProfileForEdit();
+        bindAvatarPreview();
+        bindSubmitProfile();
+    </script>
+</body>
+</html>
